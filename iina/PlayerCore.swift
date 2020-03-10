@@ -99,8 +99,8 @@ class PlayerCore: NSObject {
    Each task holds a copy of ticket value at creation, so that a previous task will perceive and
    quit early if new tasks is awaiting.
 
-   **See also**: 
-   
+   **See also**:
+
    `autoLoadFilesInCurrentFolder(ticket:)`
    */
   var backgroundQueueTicket = 0
@@ -141,8 +141,8 @@ class PlayerCore: NSObject {
     super.init()
     self.mpv = MPVController(playerCore: self)
     self.mainWindow = MainWindowController(playerCore: self)
+    self.miniPlayer = MiniPlayerWindowController(playerCore: self)
     self.initialWindow = InitialWindowController(playerCore: self)
-    self.miniPlayer = MiniPlayerWindowController(player: self)
     if #available(macOS 10.12.2, *) {
       self._touchBarSupport = TouchBarSupport(playerCore: self)
     }
@@ -167,15 +167,15 @@ class PlayerCore: NSObject {
   /**
    Open a list of urls. If there are more than one urls, add the remaining ones to
    playlist and disable auto loading.
-   
+
    - Returns: `nil` if no futher action is needed, like opened a BD Folder; otherwise the
    count of playable files.
    */
   @discardableResult
   func openURLs(_ urls: [URL], shouldAutoLoad autoLoad: Bool = true) -> Int? {
     guard !urls.isEmpty else { return 0 }
-    var urls = Utility.resolveURLs(urls)
-    
+    let urls = Utility.resolveURLs(urls)
+
     // handle BD folders and m3u / m3u8 files first
     if urls.count == 1 && (isBDFolder(urls[0]) ||
       Utility.playlistFileExt.contains(urls[0].absoluteString.lowercasedPathExtension)) {
@@ -183,10 +183,10 @@ class PlayerCore: NSObject {
       open(urls[0])
       return nil
     }
-    
+
     let playableFiles = getPlayableFiles(in: urls)
     let count = playableFiles.count
-    
+
     // check playable files count
     if count == 0 {
       return 0
@@ -197,14 +197,14 @@ class PlayerCore: NSObject {
     } else {
       info.shouldAutoLoadFiles = (count == 1)
     }
-    
+
     // open the first file
     open(playableFiles[0])
     // add the remaining to playlist
     playableFiles[1..<count].forEach { url in
       addToPlaylist(url.isFileURL ? url.path : url.absoluteString)
     }
-    
+
     // refresh playlist
     postNotification(.iinaPlaylistChanged)
     // send OSD
@@ -249,6 +249,7 @@ class PlayerCore: NSObject {
     if isInMiniPlayer {
       miniPlayer.showWindow(nil)
     } else {
+      mainWindow.windowWillOpen()
       mainWindow.showWindow(nil)
       mainWindow.windowDidOpen()
     }
@@ -312,8 +313,8 @@ class PlayerCore: NSObject {
 
   // unload main window video view
   func uninitVideo() {
-    guard mainWindow.isWindowLoaded else { return }
-    mainWindow.videoView.stopDisplaylink()
+    guard mainWindow.loaded else { return }
+    mainWindow.videoView.stopDisplayLink()
     mainWindow.videoView.uninit()
   }
 
@@ -341,10 +342,10 @@ class PlayerCore: NSObject {
     }
     switchedBackFromMiniPlayerManually = false
 
-    let needRestoreLayout = !miniPlayer.isWindowLoaded
+    let needRestoreLayout = !miniPlayer.loaded
     miniPlayer.showWindow(self)
 
-    miniPlayer.updateTrack()
+    miniPlayer.updateTitle()
     let playlistView = mainWindow.playlistView.view
     let videoView = mainWindow.videoView
     // reset down shift for playlistView
@@ -363,28 +364,25 @@ class PlayerCore: NSObject {
     videoView.removeFromSuperview()
     miniPlayer.videoWrapperView.addSubview(videoView, positioned: .below, relativeTo: nil)
     Utility.quickConstraints(["H:|[v]|", "V:|[v]|"], ["v": videoView])
-    let (dw, dh) = videoSizeForDisplay
-    miniPlayer.updateVideoViewAspectConstraint(withAspect: CGFloat(dw) / CGFloat(dh))
 
-    // if no video track (or video info is still not available now), set aspect ratio for main window
-    if let mw = mainWindow.window, mw.aspectRatio == .zero {
-      let size = NSSize(width: dw, height: dh)
-      mw.setFrame(NSRect(origin: mw.frame.origin, size: size), display: false)
-      mw.aspectRatio = size
-    }
+    let (width, height) = originalVideoSize
+    let aspect = (width == 0 || height == 0) ? 1 : CGFloat(width) / CGFloat(height)
+    miniPlayer.updateVideoViewAspectConstraint(withAspect: aspect)
+
     // if received video size before switching to music mode, hide default album art
-    if !info.videoTracks.isEmpty {
+    if info.vid != 0 {
       miniPlayer.defaultAlbumArt.isHidden = true
     }
     // in case of video size changed, reset mini player window size if playlist is folded
     if !miniPlayer.isPlaylistVisible {
       miniPlayer.setToInitialWindowSize(display: true, animate: false)
     }
-    videoView.videoLayer.draw()
 
     // hide main window
     mainWindow.window?.orderOut(self)
     isInMiniPlayer = true
+
+    videoView.videoLayer.draw(forced: true)
 
     // restore layout
     if needRestoreLayout {
@@ -421,35 +419,35 @@ class PlayerCore: NSObject {
       mainWindow.window?.makeKeyAndOrderFront(self)
     }
     // if aspect ratio is not set
-    if mainWindow.window?.aspectRatio == nil {
-      mainWindow.window?.aspectRatio = NSSize(width: AppData.widthWhenNoVideo, height: AppData.heightWhenNoVideo)
+    let (width, height) = originalVideoSize
+    if width == 0 && height == 0 {
+      mainWindow.window?.aspectRatio = AppData.sizeWhenNoVideo
     }
+    // hide mini player
+    miniPlayer.window?.orderOut(nil)
     isInMiniPlayer = false
+
+    mainWindow.videoView.videoLayer.draw(forced: true)
+
     mainWindow.updateTitle()
   }
 
   // MARK: - MPV commands
 
-  /** Pause / resume. Reset speed to 0 when pause. */
-  func togglePause(_ set: Bool?) {
-    if let setPause = set {
-      // if paused by EOF, replay the video.
-      if !setPause {
-        if mpv.getFlag(MPVProperty.eofReached) {
-          seek(absoluteSecond: 0)
-        }
-      }
-      mpv.setFlag(MPVOption.PlaybackControl.pause, setPause)
-    } else {
-      if (info.isPaused) {
-        if mpv.getFlag(MPVProperty.eofReached) {
-          seek(absoluteSecond: 0)
-        }
-        mpv.setFlag(MPVOption.PlaybackControl.pause, false)
-      } else {
-        mpv.setFlag(MPVOption.PlaybackControl.pause, true)
-      }
+  func togglePause(_ set: Bool? = nil) {
+    info.isPaused ? resume() : pause()
+  }
+  
+  func pause() {
+    mpv.setFlag(MPVOption.PlaybackControl.pause, true)
+  }
+  
+  func resume() {
+    // Restart playback when reached EOF
+    if mpv.getFlag(MPVProperty.eofReached) {
+      seek(absoluteSecond: 0)
     }
+    mpv.setFlag(MPVOption.PlaybackControl.pause, false)
   }
 
   func stop() {
@@ -616,7 +614,7 @@ class PlayerCore: NSObject {
   }
 
   func setVideoRotate(_ degree: Int) {
-    if AppData.rotations.index(of: degree)! >= 0 {
+    if AppData.rotations.firstIndex(of: degree)! >= 0 {
       mpv.setInt(MPVOption.Video.videoRotate, degree)
       info.rotation = degree
     }
@@ -763,12 +761,17 @@ class PlayerCore: NSObject {
     mpv.command(.playlistRemove, args: [index.description])
   }
 
-  func clearPlaylist() {
-    mpv.command(.playlistClear)
+  func playlistRemove(_ indexSet: IndexSet) {
+    var count = 0
+    for i in indexSet {
+      playlistRemove(i - count)
+      count += 1
+    }
+    postNotification(.iinaPlaylistChanged)
   }
 
-  func removeFromPlaylist(index: Int) {
-    mpv.command(.playlistRemove, args: ["\(index)"])
+  func clearPlaylist() {
+    mpv.command(.playlistClear)
   }
 
   func playFile(_ path: String) {
@@ -790,6 +793,7 @@ class PlayerCore: NSObject {
   func playChapter(_ pos: Int) {
     let chapter = info.chapters[pos]
     mpv.command(.seek, args: ["\(chapter.time.second)", "absolute"])
+    resume()
     // need to update time pos
     syncUITime()
   }
@@ -882,9 +886,9 @@ class PlayerCore: NSObject {
   func removeVideoFilter(_ filter: MPVFilter) -> Bool {
     var result = true
     if let label = filter.label {
-      mpv.command(.vf, args: ["del", "@" + label], checkError: false) { result = $0 >= 0 }
+      mpv.command(.vf, args: ["remove", "@" + label], checkError: false) { result = $0 >= 0 }
     } else {
-      mpv.command(.vf, args: ["del", filter.stringFormat], checkError: false) { result = $0 >= 0 }
+      mpv.command(.vf, args: ["remove", filter.stringFormat], checkError: false) { result = $0 >= 0 }
     }
     return result
   }
@@ -897,7 +901,7 @@ class PlayerCore: NSObject {
 
   func removeAudioFilter(_ filter: MPVFilter) -> Bool {
     var result = true
-    mpv.command(.af, args: ["del", filter.stringFormat], checkError: false)  { result = $0 >= 0 }
+    mpv.command(.af, args: ["remove", filter.stringFormat], checkError: false)  { result = $0 >= 0 }
     return result
   }
 
@@ -976,7 +980,9 @@ class PlayerCore: NSObject {
       Preference.set(url, for: .iinaLastPlayedFilePath)
       // Write to cache directly (rather than calling `refreshCachedVideoProgress`).
       // If user only closed the window but didn't quit the app, this can make sure playlist displays the correct progress.
-      info.cachedVideoDurationAndProgress[url.path] = (duration: info.videoDuration?.second, progress: info.videoPosition?.second)
+      info.infoQueue.async {
+        self.info.cachedVideoDurationAndProgress[url.path] = (duration: self.info.videoDuration?.second, progress: self.info.videoPosition?.second)
+      }
     }
     if let position = info.videoPosition?.second {
       Preference.set(position, for: .iinaLastPlayedFilePosition)
@@ -1056,8 +1062,12 @@ class PlayerCore: NSObject {
         mainWindow.volumeSlider.isEnabled = false
       }
 
+      if info.vid == 0 {
+        notifyMainWindowVideoSizeChanged()
+      }
+
       if self.isInMiniPlayer {
-        miniPlayer.defaultAlbumArt.isHidden = !self.info.videoTracks.isEmpty
+        miniPlayer.defaultAlbumArt.isHidden = self.info.vid != 0
       }
     }
     // set initial properties for the first file
@@ -1081,6 +1091,7 @@ class PlayerCore: NSObject {
   func playbackRestarted() {
     Logger.log("Playback restarted", subsystem: subsystem)
     reloadSavedIINAfilters()
+
     DispatchQueue.main.async {
       Timer.scheduledTimer(timeInterval: TimeInterval(0.2), target: self, selector: #selector(self.reEnableOSDAfterFileLoading), userInfo: nil, repeats: false)
     }
@@ -1099,14 +1110,13 @@ class PlayerCore: NSObject {
         if !isInMiniPlayer && !mainWindow.fsState.isFullscreen && !switchedBackFromMiniPlayerManually {
           Logger.log("Current media is audio, switch to mini player", subsystem: subsystem)
           DispatchQueue.main.sync {
-            switchToMiniPlayer(automatically: false)
+            switchToMiniPlayer(automatically: true)
           }
         }
       } else {
         if isInMiniPlayer && !switchedToMiniPlayerManually {
           Logger.log("Current media is not audio, switch to normal window", subsystem: subsystem)
           DispatchQueue.main.sync {
-            miniPlayer.close()
             switchBackFromMiniPlayer(automatically: true)
           }
         }
@@ -1137,8 +1147,8 @@ class PlayerCore: NSObject {
    - Try match videos and subs by series and filename.
    - For unmatched videos and subs, perform fuzzy (but slow, O(n^2)) match for them.
 
-   **Remark**: 
-   
+   **Remark**:
+
    This method is expected to be executed in `backgroundQueue` (see `backgroundQueueTicket`).
    Therefore accesses to `self.info` and mpv playlist must be guarded.
    */
@@ -1152,7 +1162,7 @@ class PlayerCore: NSObject {
    These options currently include fullscreen and ontop.
    */
   private func checkUnsyncedWindowOptions() {
-    guard mainWindow.isWindowLoaded else { return }
+    guard mainWindow.loaded else { return }
 
     let fs = mpv.getFlag(MPVOption.Window.fullscreen)
     if fs != mainWindow.fsState.isFullscreen {
@@ -1173,11 +1183,9 @@ class PlayerCore: NSObject {
   // MARK: - Sync with UI in MainWindow
 
   func notifyMainWindowVideoSizeChanged() {
-    DispatchQueue.main.sync {
-      self.mainWindow.adjustFrameByVideoSize()
-      if self.isInMiniPlayer {
-        self.miniPlayer.updateVideoSize()
-      }
+    mainWindow.adjustFrameByVideoSize()
+    if isInMiniPlayer {
+      miniPlayer.updateVideoSize()
     }
   }
 
@@ -1213,7 +1221,7 @@ class PlayerCore: NSObject {
 
   func syncUI(_ option: SyncUIOption) {
     // if window not loaded, ignore
-    guard mainWindow.isWindowLoaded else { return }
+    guard mainWindow.loaded else { return }
     Logger.log("Syncing UI \(option)", level: .verbose, subsystem: subsystem)
 
     switch option {
@@ -1237,13 +1245,16 @@ class PlayerCore: NSObject {
       info.videoDuration?.second = mpv.getDouble(MPVProperty.duration)
       info.constrainVideoPosition()
       info.pausedForCache = mpv.getFlag(MPVProperty.pausedForCache)
-      info.cacheSize = mpv.getInt(MPVProperty.cacheSize)
-      info.cacheUsed = mpv.getInt(MPVProperty.cacheUsed)
+      info.cacheUsed = ((mpv.getNode(MPVProperty.demuxerCacheState) as? [String: Any])?["fw-bytes"] as? Int) ?? 0
       info.cacheSpeed = mpv.getInt(MPVProperty.cacheSpeed)
       info.cacheTime = mpv.getInt(MPVProperty.demuxerCacheTime)
       info.bufferingState = mpv.getInt(MPVProperty.cacheBufferingState)
       DispatchQueue.main.async {
-        self.mainWindow.updatePlayTime(withDuration: true, andProgressBar: true)
+        if self.isInMiniPlayer {
+          self.miniPlayer.updatePlayTime(withDuration: true, andProgressBar: true)
+        } else {
+          self.mainWindow.updatePlayTime(withDuration: true, andProgressBar: true)
+        }
         self.mainWindow.updateNetworkState()
       }
 
@@ -1292,8 +1303,7 @@ class PlayerCore: NSObject {
   }
 
   func sendOSD(_ osd: OSDMessage, autoHide: Bool = true, accessoryView: NSView? = nil) {
-    // querying `mainWindow.isWindowLoaded` will initialize mainWindow unexpectly
-    guard mainWindow.isWindowLoaded && Preference.bool(for: .enableOSD) else { return }
+    guard mainWindow.loaded && Preference.bool(for: .enableOSD) else { return }
     if info.disableOSDForFileLoading {
       guard case .fileStart = osd else {
         return
@@ -1325,6 +1335,9 @@ class PlayerCore: NSObject {
 
   func generateThumbnails() {
     Logger.log("Getting thumbnails", subsystem: subsystem)
+    info.thumbnailsReady = false
+    info.thumbnails.removeAll(keepingCapacity: true)
+    info.thumbnailsProgress = 0
     if #available(macOS 10.12.2, *) {
       DispatchQueue.main.async {
         self.touchBarSupport.touchBarPlaySlider?.resetCachedThumbnails()
@@ -1340,9 +1353,6 @@ class PlayerCore: NSObject {
         return
       }
     }
-    info.thumbnails.removeAll(keepingCapacity: true)
-    info.thumbnailsProgress = 0
-    info.thumbnailsReady = false
     if Preference.bool(for: .enableThumbnailPreview) {
       if let cacheName = info.mpvMd5, ThumbnailCache.fileIsCached(forName: cacheName, forVideo: info.currentURL) {
         Logger.log("Found thumbnail cache", subsystem: subsystem)
@@ -1510,10 +1520,21 @@ class PlayerCore: NSObject {
   }
 
   func getMusicMetadata() -> (title: String, album: String, artist: String) {
-    let title = mpv.getString(MPVProperty.mediaTitle) ?? ""
-    let album = mpv.getString("metadata/by-key/album") ?? ""
-    let artist = mpv.getString("metadata/by-key/artist") ?? ""
-    return (title, album, artist)
+    if mpv.getInt(MPVProperty.chapters) > 0 {
+      let chapter = mpv.getInt(MPVProperty.chapter)
+      let chapterTitle = mpv.getString(MPVProperty.chapterListNTitle(chapter))
+      return (
+        chapterTitle ?? mpv.getString(MPVProperty.mediaTitle) ?? "",
+        mpv.getString("metadata/by-key/album") ?? "",
+        mpv.getString("chapter-metadata/by-key/performer") ?? mpv.getString("metadata/by-key/artist") ?? ""
+      )
+    } else {
+      return (
+        mpv.getString(MPVProperty.mediaTitle) ?? "",
+        mpv.getString("metadata/by-key/album") ?? "",
+        mpv.getString("metadata/by-key/artist") ?? ""
+      )
+    }
   }
 
   /** Check if there are IINA filters saved in watch_later file. */
@@ -1558,10 +1579,12 @@ class PlayerCore: NSObject {
   func refreshCachedVideoProgress(forVideoPath path: String) {
     let duration = FFmpegController.probeVideoDuration(forFile: path)
     let progress = Utility.playbackProgressFromWatchLater(path.md5)
-    info.cachedVideoDurationAndProgress[path] = (
-      duration: duration,
-      progress: progress?.second
-    )
+    info.infoQueue.async {  // Running in the background thread
+      self.info.cachedVideoDurationAndProgress[path] = (
+        duration: duration,
+        progress: progress?.second
+      )
+    }
   }
 
   enum CurrentMediaIsAudioStatus {
@@ -1585,7 +1608,7 @@ class PlayerCore: NSObject {
 
   static func checkStatusForSleep() {
     for player in playing {
-      if !player.info.isPaused {
+      if player.info.isPlaying {
         SleepPreventer.preventSleep()
         return
       }

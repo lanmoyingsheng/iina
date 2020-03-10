@@ -8,14 +8,20 @@
 
 import Cocoa
 
+fileprivate extension QuickSettingViewController.TabViewType {
+  init(buttonTag: Int) {
+    self = [.video, .audio, .sub][at: buttonTag] ?? .video
+  }
+}
+
 class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, SidebarViewController {
 
   override var nibName: NSNib.Name {
     return NSNib.Name("QuickSettingViewController")
   }
-  
+
   let sliderSteps = 24.0
-  
+
   /**
    Similiar to the one in `PlaylistViewController`.
    Since IBOutlet is `nil` when the view is not loaded at first time,
@@ -46,7 +52,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBOutlet weak var tabView: NSTabView!
 
   @IBOutlet weak var buttonTopConstraint: NSLayoutConstraint!
-  
+
   @IBOutlet weak var videoTableView: NSTableView!
   @IBOutlet weak var audioTableView: NSTableView!
   @IBOutlet weak var subTableView: NSTableView!
@@ -75,14 +81,14 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBOutlet weak var audioDelaySliderIndicator: NSTextField!
   @IBOutlet weak var audioDelaySliderConstraint: NSLayoutConstraint!
   @IBOutlet weak var customAudioDelayTextField: NSTextField!
-  
-  
+
+
   @IBOutlet weak var subLoadSementedControl: NSSegmentedControl!
   @IBOutlet weak var subDelaySlider: NSSlider!
   @IBOutlet weak var subDelaySliderIndicator: NSTextField!
   @IBOutlet weak var subDelaySliderConstraint: NSLayoutConstraint!
   @IBOutlet weak var customSubDelayTextField: NSTextField!
-  
+
   @IBOutlet weak var audioEqSlider1: NSSlider!
   @IBOutlet weak var audioEqSlider2: NSSlider!
   @IBOutlet weak var audioEqSlider3: NSSlider!
@@ -131,12 +137,20 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
 
     subLoadSementedControl.image(forSegment: 1)?.isTemplate = true
 
-    // notifications
-    let tracklistChangeObserver = NotificationCenter.default.addObserver(forName: .iinaTracklistChanged, object: player, queue: OperationQueue.main) { _ in
-      self.player.getTrackInfo()
-      self.withAllTableViews { tableView, _ in tableView.reloadData() }
+    func observe(_ name: Notification.Name, block: @escaping (Notification) -> Void) {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: player, queue: .main, using: block))
     }
-    observers.append(tracklistChangeObserver)
+
+    // notifications
+    observe(.iinaTracklistChanged) { _ in
+      self.withAllTableViews { view, _ in view.reloadData() }
+    }
+    observe(.iinaVIDChanged) { _ in self.videoTableView.reloadData() }
+    observe(.iinaAIDChanged) { _ in self.audioTableView.reloadData() }
+    observe(.iinaSIDChanged) { _ in
+      self.subTableView.reloadData()
+      self.secSubTableView.reloadData()
+    }
   }
 
   // MARK: - Validate UI
@@ -163,17 +177,17 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   }
 
   private func updateVideoTabControl() {
-    if let index = AppData.aspectsInPanel.index(of: player.info.unsureAspect) {
+    if let index = AppData.aspectsInPanel.firstIndex(of: player.info.unsureAspect) {
       aspectSegment.selectedSegment = index
     } else {
       aspectSegment.selectedSegment = -1
     }
-    if let index = AppData.cropsInPanel.index(of: player.info.unsureCrop) {
+    if let index = AppData.cropsInPanel.firstIndex(of: player.info.unsureCrop) {
       cropSegment.selectedSegment = index
     } else {
       cropSegment.selectedSegment = -1
     }
-    rotateSegment.selectSegment(withTag: AppData.rotations.index(of: player.info.rotation) ?? -1)
+    rotateSegment.selectSegment(withTag: AppData.rotations.firstIndex(of: player.info.rotation) ?? -1)
     deinterlaceCheckBtn.state = player.info.deinterlace ? .on : .off
     let speed = player.mpv.getDouble(MPVOption.PlaybackControl.speed)
     customSpeedTextField.doubleValue = speed
@@ -274,33 +288,17 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   /** Switch tab (for internal call) */
   private func switchToTab(_ tab: TabViewType) {
     let button: NSButton
-    let tabIndex: Int
     switch tab {
     case .video:
       button = videoTabBtn
-      tabIndex = 0
     case .audio:
       button = audioTabBtn
-      tabIndex = 1
     case .sub:
       button = subTabBtn
-      tabIndex = 2
     default:
       return
     }
-    tabView.selectTabViewItem(at: tabIndex)
-    // cancel current active button
-    for btn in [videoTabBtn, audioTabBtn, subTabBtn] {
-      if let btn = btn {
-        let title = btn.title
-        btn.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleFontAttributes)
-      }
-    }
-    // the active one
-    let title = button.title
-    button.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleActiveFontAttributes)
-
-    currentTab = tab
+    tabBtnAction(button)
   }
 
   // MARK: - NSTableView delegate
@@ -357,7 +355,6 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
         let subId = view.selectedRow > 0 ? player.info.trackList(type)[view.selectedRow-1].id : 0
         self.player.setTrack(subId, forType: type)
         view.deselectAll(self)
-        view.reloadData()
       }
     }
     // Revalidate layout and controls
@@ -384,16 +381,8 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
 
   @IBAction func tabBtnAction(_ sender: NSButton) {
     tabView.selectTabViewItem(at: sender.tag)
-    // cancel current active button
-    [videoTabBtn, audioTabBtn, subTabBtn].forEach { btn in
-      if let btn = btn {
-        let title = btn.title
-        btn.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleFontAttributes)
-      }
-    }
-    // the active one
-    let title = sender.title
-    sender.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleActiveFontAttributes)
+    [videoTabBtn, audioTabBtn, subTabBtn].forEach { Utility.setBoldTitle(for: $0, $0 == sender) }
+    currentTab = .init(buttonTag: sender.tag)
     reload()
   }
 
@@ -402,19 +391,19 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBAction func aspectChangedAction(_ sender: NSSegmentedControl) {
     let aspect = AppData.aspectsInPanel[sender.selectedSegment]
     player.setVideoAspect(aspect)
-    mainWindow.displayOSD(.aspect(aspect))
+    player.sendOSD(.aspect(aspect))
   }
 
   @IBAction func cropChangedAction(_ sender: NSSegmentedControl) {
     let cropStr = AppData.cropsInPanel[sender.selectedSegment]
     player.setCrop(fromString: cropStr)
-    mainWindow.displayOSD(.crop(cropStr))
+    player.sendOSD(.crop(cropStr))
   }
 
   @IBAction func rotationChangedAction(_ sender: NSSegmentedControl) {
     let value = AppData.rotations[sender.selectedSegment]
     player.setVideoRotate(value)
-    mainWindow.displayOSD(.rotate(value))
+    player.sendOSD(.rotate(value))
   }
 
   @IBAction func customAspectEditFinishedAction(_ sender: AnyObject?) {
@@ -422,7 +411,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     if value != "" {
       aspectSegment.setSelected(false, forSegment: aspectSegment.selectedSegment)
       player.setVideoAspect(value)
-      mainWindow.displayOSD(.aspect(value))
+      player.sendOSD(.aspect(value))
     }
   }
 
@@ -718,10 +707,8 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   }
 
   @IBAction func subTextSizeAction(_ sender: AnyObject) {
-    if let selectedItem = subTextSizePopUp.selectedItem {
-      if let value = Double(selectedItem.title) {
-        player.setSubTextSize(value)
-      }
+    if let selectedItem = subTextSizePopUp.selectedItem, let value = Double(selectedItem.title) {
+      player.setSubTextSize(value)
     }
   }
 
@@ -730,7 +717,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   }
 
   @IBAction func subTextBorderWidthAction(_ sender: AnyObject) {
-    if let value = Double(subTextBorderWidthPopUp.stringValue) {
+    if let selectedItem = subTextBorderWidthPopUp.selectedItem, let value = Double(selectedItem.title) {
       player.setSubTextBorderSize(value)
     }
   }
@@ -745,5 +732,11 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     }
   }
 
+
+}
+
+class QuickSettingView: NSView {
+
+  override func mouseDown(with event: NSEvent) {}
 
 }

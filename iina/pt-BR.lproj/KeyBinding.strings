@@ -1,4 +1,4 @@
-/* 
+/*
   KeyBinding.strings
   iina
 
@@ -53,6 +53,7 @@
 "iina.toggle-mirror" = "Alternar espelho";
 "iina.save-playlist" = "Salvar playlist atual";
 "iina.delete-current-file" = "Deletar arquivo atual";
+"iina.delete-current-file-hard" = "Excluir o arquivo atual diretamente sem mover para o lixo";
 "iina.find-online-subs" = "Encontrar legendas online";
 "iina.save-downloaded-sub" = "Salvar legenda baixada";
 
@@ -105,7 +106,6 @@
 "opt.ontop" = "Flutuar no frente";
 
 "opt.chapter" = "Capítulo";
-
 
 "read.set" = "Setar {{property}} para {{value}}";
 "read.add" = "{{property}} {{value}}";

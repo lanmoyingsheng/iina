@@ -8,10 +8,9 @@
 
 import Cocoa
 
-class Utility {
+typealias PK = Preference.Key
 
-  static let tabTitleFontAttributes = FontAttributes(font: .system, size: .system, align: .center).value
-  static let tabTitleActiveFontAttributes = FontAttributes(font: .systemBold, size: .system, align: .center).value
+class Utility {
 
   static let supportedFileExt: [MPVTrack.TrackType: [String]] = [
     .video: ["mkv", "mp4", "avi", "m4v", "mov", "3gp", "ts", "mts", "m2ts", "wmv", "flv", "f4v", "asf", "webm", "rm", "rmvb", "qt", "dv", "mpg", "mpeg", "mxf", "vob", "gif"],
@@ -37,6 +36,8 @@ class Utility {
       alert.messageText = NSLocalizedString("alert.title_info", comment: "Information")
     case .warning:
       alert.messageText = NSLocalizedString("alert.title_warning", comment: "Warning")
+    @unknown default:
+      assertionFailure("Unknown \(type(of: alertStyle)) \(alertStyle)")
     }
     alert.informativeText = message
     alert.alertStyle = alertStyle
@@ -52,21 +53,23 @@ class Utility {
       alert.messageText = NSLocalizedString("alert.title_info", comment: "Information")
     case .warning:
       alert.messageText = NSLocalizedString("alert.title_warning", comment: "Warning")
+    @unknown default:
+      assertionFailure("Unknown \(type(of: style)) \(style)")
     }
-    
+
     var format: String
     if let stringComment = comment {
       format = NSLocalizedString("alert." + key, comment: stringComment)
     } else {
       format = NSLocalizedString("alert." + key, comment: key)
     }
-    
+
     if let stringArguments = arguments {
       alert.informativeText = String(format: format, arguments: stringArguments)
     } else {
       alert.informativeText = String(format: format)
     }
-    
+
     alert.alertStyle = style
     if let sheetWindow = sheetWindow {
       alert.beginSheetModal(for: sheetWindow)
@@ -77,7 +80,7 @@ class Utility {
 
   // MARK: - Panels, Alerts
 
-  /** 
+  /**
    Pop up an ask panel.
    - Parameters:
      - key: A localization key. "alert.`key`.title" will be used as alert title, and "alert.`key`.message" will be the informative text.
@@ -318,7 +321,7 @@ class Utility {
   }
 
   static func getFilePath(Configs userConfigs: [String: Any]!, forConfig conf: String, showAlert: Bool = true) -> String? {
-    
+
     // if is default config
     if let dv = PrefKeyBindingViewController.defaultConfigs[conf] {
       return dv
@@ -331,7 +334,7 @@ class Utility {
       return nil
     }
   }
-  
+
   static let appSupportDirUrl: URL = {
     // get path
     let asPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -387,6 +390,11 @@ class Utility {
 
   // MARK: - Util functions
 
+  static func setBoldTitle(for button: NSButton, _ active: Bool) {
+    button.attributedTitle = NSAttributedString(string: button.title,
+                                                attributes: FontAttributes(font: active ? .systemBold : .system, size: .system, align: .center).value)
+  }
+
   static func toRealSubScale(fromDisplaySubScale scale: Double) -> Double {
     return scale > 0 ? scale : -1 / scale
   }
@@ -425,7 +433,7 @@ class Utility {
     }
   }
 
-  // Do not use this function for macOS 10.14+
+  @available(macOS, deprecated: 10.14, message: "Use the system appearance-based APIs instead.")
   static func getAppearanceAndMaterial(from theme: Preference.Theme) -> (NSAppearance?, NSVisualEffectView.Material) {
     switch theme {
     case .ultraDark:

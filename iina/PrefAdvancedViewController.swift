@@ -17,13 +17,13 @@ class PrefAdvancedViewController: PreferenceViewController, PreferenceWindowEmbe
 
   var viewIdentifier: String = "PrefAdvancedViewController"
 
-  var toolbarItemImage: NSImage? {
-    return NSImage(named: NSImage.advancedName)!
-  }
-
   var preferenceTabTitle: String {
     view.layoutSubtreeIfNeeded()
     return NSLocalizedString("preference.advanced", comment: "Advanced")
+  }
+
+  var preferenceTabImage: NSImage {
+    return NSImage(named: NSImage.Name("pref_advanced"))!
   }
 
   var hasResizableWidth: Bool = false
@@ -45,7 +45,6 @@ class PrefAdvancedViewController: PreferenceViewController, PreferenceWindowEmbe
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    updateControlStatus(self)
 
     guard let op = Preference.value(for: .userOptions) as? [[String]] else {
       Utility.showAlert("extra_option.cannot_read", sheetWindow: view.window)
@@ -64,15 +63,6 @@ class PrefAdvancedViewController: PreferenceViewController, PreferenceWindowEmbe
   }
 
   // MARK: - IBAction
-
-  @IBAction func updateControlStatus(_ sender: AnyObject) {
-    let enable = enableSettingsBtn.state == .on
-    settingsView.subviews.forEach { view in
-      if let control = view as? NSControl {
-        control.isEnabled = enable
-      }
-    }
-  }
 
   @IBAction func revealLogDir(_ sender: AnyObject) {
     NSWorkspace.shared.open(Utility.logDirURL)
@@ -101,7 +91,7 @@ class PrefAdvancedViewController: PreferenceViewController, PreferenceWindowEmbe
   }
 
   @IBAction func helpBtnAction(_ sender: AnyObject) {
-    NSWorkspace.shared.open(URL(string: AppData.websiteLink)!.appendingPathComponent("documentation"))
+    NSWorkspace.shared.open(URL(string: AppData.wikiLink)!.appendingPathComponent("MPV-Options-and-Properties"))
   }
 }
 

@@ -1,21 +1,21 @@
-/* 
+/*
   FilterPresets.strings
   iina
 
   Created by lhc on 25/8/2017.
   Copyright © 2017 lhc. All rights reserved.
 */
-
-
 /* It's optional to localize descriptions for each parameter! */
 
-"crop" = "Corte";
-"crop.w" = "Largura (padrão: largura do video)";
-"crop.h" = "Altura (padrão: altura do video)";
+
+
+"crop" = "Cortar";
+"crop.w" = "Largura (padrão: largura do vídeo)";
+"crop.h" = "Altura (padrão: altura do vídeo)";
 "crop.x" = "Origem X (padrão: center)";
 "crop.y" = "Origem Y (padrão: center)";
 
-"expand" = "Expand";
+"expand" = "Expandir";
 "expand.w" = "Width (padrão: largura do video)";
 "expand.h" = "Height (padrão: altura do video)";
 "expand.x" = "Origin X (padrão: centro)";
@@ -27,8 +27,8 @@
 "sharpen.msize" = "tamanho da matriz";
 "sharpen.amount" = "Quantidade";
 
-"blur" = "+Enbaçado";
-"blur.msize" = "tamanho da matriz";
+"blur" = "Borrado";
+"blur.msize" = "Tamanho da Matriz";
 "blur.amount" = "Quantidade";
 
 "delogo" = "RemoverLogo";

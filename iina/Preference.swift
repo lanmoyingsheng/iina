@@ -79,6 +79,7 @@ struct Preference {
     static let pauseWhenInactive = Key("pauseWhenInactive")
     static let playWhenEnteringFullScreen = Key("playWhenEnteringFullScreen")
     static let pauseWhenLeavingFullScreen = Key("pauseWhenLeavingFullScreen")
+    static let pauseWhenGoesToSleep = Key("pauseWhenGoesToSleep")
 
     /** Show chapter pos in progress bar (bool) */
     static let showChapterPos = Key("showChapterPos")
@@ -133,6 +134,10 @@ struct Preference {
     static let musicModeShowAlbumArt = Key("musicModeShowAlbumArt")
 
     static let displayTimeAndBatteryInFullScreen = Key("displayTimeAndBatteryInFullScreen")
+    
+    static let windowBehaviorWhenPip = Key("windowBehaviorWhenPip")
+    static let pauseWhenPip = Key("pauseWhenPip")
+    static let togglePipByMinimizingWindow = Key("togglePipByMinimizingWindow")
 
     // Codec
 
@@ -214,6 +219,7 @@ struct Preference {
     static let verticalScrollAction = Key("verticalScrollAction")
     static let horizontalScrollAction = Key("horizontalScrollAction")
 
+    static let videoViewAcceptsFirstMouse = Key("videoViewAcceptsFirstMouse")
     static let singleClickAction = Key("singleClickAction")
     static let doubleClickAction = Key("doubleClickAction")
     static let rightClickAction = Key("rightClickAction")
@@ -248,6 +254,8 @@ struct Preference {
     /** Log to log folder (bool) */
     static let enableLogging = Key("enableLogging")
     static let logLevel = Key("logLevel")
+
+    static let displayKeyBindingRawValues = Key("displayKeyBindingRawValues")
 
     /** unused */
     // static let resizeFrameBuffer = Key("resizeFrameBuffer")
@@ -591,6 +599,18 @@ struct Preference {
       }
     }
   }
+  
+  enum WindowBehaviorWhenPip: Int, InitializingFromKey {
+    case doNothing = 0
+    case hide
+    case minimize
+    
+    static var defaultValue = WindowBehaviorWhenPip.doNothing
+    
+    init?(key: Key) {
+      self.init(rawValue: Preference.integer(for: key))
+    }
+  }
 
   enum ToolBarButton: Int {
     case settings = 0
@@ -662,6 +682,7 @@ struct Preference {
     .pauseWhenMinimized: false,
     .pauseWhenInactive: false,
     .pauseWhenLeavingFullScreen: false,
+    .pauseWhenGoesToSleep: true,
     .playWhenEnteringFullScreen: false,
 
     .playlistAutoAdd: true,
@@ -679,6 +700,10 @@ struct Preference {
     .musicModeShowPlaylist: false,
     .musicModeShowAlbumArt: true,
     .displayTimeAndBatteryInFullScreen: false,
+    
+    .windowBehaviorWhenPip: WindowBehaviorWhenPip.doNothing.rawValue,
+    .pauseWhenPip: false,
+    .togglePipByMinimizingWindow: false,
 
     .videoThreads: 0,
     .hardwareDecoder: HardwareDecoderOption.auto.rawValue,
@@ -716,7 +741,7 @@ struct Preference {
     .subMarginY: Float(22),
     .subPos: Float(100),
     .subLang: "",
-    .onlineSubSource: OnlineSubtitle.Source.shooter.rawValue,
+    .onlineSubSource: OnlineSubtitle.Source.openSub.rawValue,
     .displayInLetterBox: true,
     .subScaleWithWindow: true,
     .openSubUsername: "",
@@ -728,7 +753,7 @@ struct Preference {
     .enableCache: true,
     .defaultCacheSize: 153600,
     .cacheBufferSize: 153600,
-    .secPrefech: 100,
+    .secPrefech: 36000,
     .userAgent: "",
     .transportRTSPThrough: RTSPTransportation.tcp.rawValue,
     .ytdlEnabled: true,
@@ -743,6 +768,7 @@ struct Preference {
     .useMpvOsd: false,
     .enableLogging: false,
     .logLevel: Logger.Level.debug.rawValue,
+    .displayKeyBindingRawValues: false,
     .userOptions: [],
     .useUserDefinedConfDir: false,
     .userDefinedConfDir: "~/.config/mpv/",
@@ -755,6 +781,7 @@ struct Preference {
     .volumeScrollAmount: 3,
     .verticalScrollAction: ScrollAction.volume.rawValue,
     .horizontalScrollAction: ScrollAction.seek.rawValue,
+    .videoViewAcceptsFirstMouse: false,
     .singleClickAction: MouseClickAction.hideOSC.rawValue,
     .doubleClickAction: MouseClickAction.fullscreen.rawValue,
     .rightClickAction: MouseClickAction.pause.rawValue,
@@ -860,5 +887,5 @@ struct Preference {
   static func `enum`<T: InitializingFromKey>(for key: Key) -> T {
     return T.init(key: key) ?? T.defaultValue
   }
-  
+
 }

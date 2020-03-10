@@ -13,6 +13,7 @@ extension NSSlider {
   func knobPointPosition() -> CGFloat {
     let sliderOrigin = frame.origin.x + knobThickness / 2
     let sliderWidth = frame.width - knobThickness
+    assert(maxValue > minValue)
     let knobPos = sliderOrigin + sliderWidth * CGFloat((doubleValue - minValue) / (maxValue - minValue))
     return knobPos
   }
@@ -37,6 +38,7 @@ extension NSSize {
 
   var aspect: CGFloat {
     get {
+      assert(width != 0 && height != 0)
       return width / height
     }
   }
@@ -77,13 +79,13 @@ extension NSSize {
     }
   }
 
-  /** 
+  /**
    Given another size S, returns a size that:
 
    - maintains the same aspect ratio;
    - has same height or/and width as S;
    - always bigger than S.
-   
+
    - parameter toSize: The given size S.
 
    ```
@@ -95,6 +97,9 @@ extension NSSize {
    ```
    */
   func grow(toSize size: NSSize) -> NSSize {
+    if width == 0 || height == 0 {
+      return size
+    }
     let sizeAspect = size.aspect
     if aspect > sizeAspect {  // self is wider, grow to meet height
       return NSSize(width: size.height * aspect, height: size.height)
@@ -109,7 +114,7 @@ extension NSSize {
    - maintains the same aspect ratio;
    - has same height or/and width as S;
    - always smaller than S.
-   
+
    - parameter toSize: The given size S.
 
    ```
@@ -121,7 +126,10 @@ extension NSSize {
    ```
    */
   func shrink(toSize size: NSSize) -> NSSize {
-    let  sizeAspect = size.aspect
+    if width == 0 || height == 0 {
+      return size
+    }
+    let sizeAspect = size.aspect
     if aspect < sizeAspect { // self is taller, shrink to meet height
       return NSSize(width: size.height * aspect, height: size.height)
     } else {
@@ -350,15 +358,16 @@ extension Data {
   }
 
   var chksum64: UInt64 {
-    get {
-      let count64 = self.count / MemoryLayout<UInt64>.size
-      return self.withUnsafeBytes{ (ptr: UnsafePointer<UInt64>) -> UInt64 in
-        let bufferPtr = UnsafeBufferPointer(start: ptr, count: count64)
-        return bufferPtr.reduce(UInt64(0), &+)
-      }
+    return withUnsafeBytes {
+      $0.bindMemory(to: UInt64.self).reduce(0, &+)
     }
   }
 
+  init<T>(bytesOf thing: T) {
+    var copyOfThing = thing // Hopefully CoW?
+    self.init(bytes: &copyOfThing, count: MemoryLayout.size(ofValue: thing))
+  }
+  
   func saveToFolder(_ url: URL, filename: String) -> URL? {
     let fileUrl = url.appendingPathComponent(filename)
     do {
@@ -368,6 +377,14 @@ extension Data {
       return nil
     }
     return fileUrl
+  }
+}
+
+extension FileHandle {
+  func read<T>(type: T.Type /* To prevent unintended specializations */) -> T {
+    return readData(ofLength: MemoryLayout<T>.size).withUnsafeBytes {
+      $0.bindMemory(to: T.self).first!
+    }
   }
 }
 
@@ -388,6 +405,10 @@ extension String {
 
   var lowercasedPathExtension: String {
     return (self as NSString).pathExtension.lowercased()
+  }
+
+  var mpvFixedLengthQuoted: String {
+    return "%\(count)%\(self)"
   }
 
   mutating func deleteLast(_ num: Int) {
@@ -463,6 +484,40 @@ extension NSImage {
     image.isTemplate = false
 
     return image
+  }
+
+  func rounded() -> NSImage {
+    let image = NSImage(size: size)
+    image.lockFocus()
+
+    let frame = NSRect(origin: .zero, size: size)
+    NSBezierPath(ovalIn: frame).addClip()
+    draw(at: .zero, from: frame, operation: .sourceOver, fraction: 1)
+
+    image.unlockFocus()
+    return image
+  }
+
+  static func maskImage(cornerRadius: CGFloat) -> NSImage {
+    let image = NSImage(size: NSSize(width: cornerRadius * 2, height: cornerRadius * 2), flipped: false) { rectangle in
+      let bezierPath = NSBezierPath(roundedRect: rectangle, xRadius: cornerRadius, yRadius: cornerRadius)
+      NSColor.black.setFill()
+      bezierPath.fill()
+      return true
+    }
+    image.capInsets = NSEdgeInsets(top: cornerRadius, left: cornerRadius, bottom: cornerRadius, right: cornerRadius)
+    return image
+  }
+}
+
+
+extension NSVisualEffectView {
+  func roundCorners(withRadius cornerRadius: CGFloat) {
+    if #available(macOS 10.14, *) {
+      maskImage = .maskImage(cornerRadius: cornerRadius)
+    } else {
+      layer?.cornerRadius = cornerRadius
+    }
   }
 }
 

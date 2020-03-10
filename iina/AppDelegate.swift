@@ -23,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   /** Whether performed some basic initialization, like bind menu items. */
   var isReady = false
-  /** 
+  /**
    Becomes true once `application(_:openFile:)` or `droppedText()` is called.
    Mainly used to distinguish normal launches from others triggered by drag-and-dropping files.
    */
@@ -78,7 +78,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   @IBOutlet weak var dockMenu: NSMenu!
 
   private func getReady() {
-    registerUserDefaultValues()
     menuController.bindMenuItems()
     PlayerCore.loadKeyBindings()
     isReady = true
@@ -87,6 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - App Delegate
 
   func applicationWillFinishLaunching(_ notification: Notification) {
+    registerUserDefaultValues()
     Logger.log("App will launch")
 
     // register for url event
@@ -165,16 +165,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       if RemoteCommandController.useSystemMediaControl {
         Logger.log("Setting up MediaPlayer integration")
         RemoteCommandController.setup()
-        NowPlayingInfoManager.updateState(.playing)
+        NowPlayingInfoManager.updateState(.unknown)
       }
     }
+
+    let _ = PlayerCore.first
 
     // if have pending open request
     if let url = pendingURL {
       parsePendingURL(url)
     }
-
-    let _ = PlayerCore.first
 
     if !commandLineStatus.isCommandLine {
       // check whether showing the welcome window after 0.1s
@@ -207,10 +207,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
 
       // enter PIP
-      if #available(OSX 10.12, *), let pc = lastPlayerCore, commandLineStatus.enterPIP {
+      if #available(macOS 10.12, *), let pc = lastPlayerCore, commandLineStatus.enterPIP {
         pc.mainWindow.enterPIP()
       }
     }
+
+    NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
 
     NSApplication.shared.servicesProvider = self
   }
@@ -242,7 +244,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    guard PlayerCore.active.mainWindow.isWindowLoaded || PlayerCore.active.initialWindow.isWindowLoaded else { return false }
+    guard PlayerCore.active.mainWindow.loaded || PlayerCore.active.initialWindow.loaded else { return false }
+    guard !PlayerCore.active.mainWindow.isWindowHidden else { return false }
     return Preference.bool(for: .quitWhenNoOpenedWindow)
   }
 
@@ -307,7 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       PlayerCore.active.openURLString(url)
     }
   }
-  
+
   // MARK: - Dock menu
 
   func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
@@ -367,10 +370,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
       // new_window
       let player: PlayerCore
-      if let newWindowValue = queryDict["new_window"], newWindowValue == "0" {
-        player = PlayerCore.active
-      } else {
+      if let newWindowValue = queryDict["new_window"], newWindowValue == "1" {
         player = PlayerCore.newPlayerCore
+      } else {
+        player = PlayerCore.active
       }
 
       // enqueue
@@ -388,7 +391,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         player.mpv.setFlag(MPVOption.Window.fullscreen, true)
       } else if let pipValue = queryDict["pip"], pipValue == "1" {
         // pip
-        if #available(OSX 10.12, *) {
+        if #available(macOS 10.12, *) {
           player.mainWindow.enterPIP()
         }
       }
@@ -507,7 +510,7 @@ struct CommandLineStatus {
     mpvArguments.removeAll()
     iinaArguments.removeAll()
     for arg in args {
-      let splitted = arg.dropFirst(2).split(separator: "=", maxSplits: 2)
+      let splitted = arg.dropFirst(2).split(separator: "=", maxSplits: 1)
       let name = String(splitted[0])
       if (name.hasPrefix("mpv-")) {
         // mpv args
@@ -551,15 +554,15 @@ class RemoteCommandController {
 
   static func setup() {
     remoteCommand.playCommand.addTarget { _ in
-      PlayerCore.lastActive.togglePause(false)
+      PlayerCore.lastActive.resume()
       return .success
     }
     remoteCommand.pauseCommand.addTarget { _ in
-      PlayerCore.lastActive.togglePause(true)
+      PlayerCore.lastActive.pause()
       return .success
     }
     remoteCommand.togglePlayPauseCommand.addTarget { _ in
-      PlayerCore.lastActive.togglePause(nil)
+      PlayerCore.lastActive.togglePause()
       return .success
     }
     remoteCommand.stopCommand.addTarget { _ in

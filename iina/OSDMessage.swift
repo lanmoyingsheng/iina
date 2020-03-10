@@ -127,7 +127,7 @@ enum OSDMessage {
         String(format: NSLocalizedString("osd.deinterlace", comment: "Deinterlace: %@"), enable ? NSLocalizedString("general.on", comment: "On") : NSLocalizedString("general.off", comment: "Off")),
         .normal
       )
-     
+
     case .audioDelay(let value):
       if value == 0 {
         return (
@@ -253,8 +253,7 @@ enum OSDMessage {
     case .startFindingSub(let source):
       return (
         NSLocalizedString("osd.find_online_sub", comment: "Finding online subtitles..."),
-//        .withText(NSLocalizedString("osd.find_online_sub.source", comment: "from") + " " + source)
-        .withText("from " + source)
+        .withText(NSLocalizedString("osd.find_online_sub.source", comment: "from") + " " + source)
       )
 
     case .foundSub(let count):

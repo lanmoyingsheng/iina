@@ -24,7 +24,11 @@ fileprivate extension NSColor {
 class PlaySliderCell: NSSliderCell {
 
   lazy var playerCore: PlayerCore = {
-    return (self.controlView!.window!.windowController as! MainWindowController).player
+    let windowController = self.controlView!.window!.windowController
+    if let mainWindowController = windowController as? MainWindowController {
+      return mainWindowController.player
+    }
+    return (windowController as! MiniPlayerWindowController).player
   }()
 
   override var knobThickness: CGFloat {
@@ -134,15 +138,15 @@ class PlaySliderCell: NSSliderCell {
 
   override func drawBar(inside rect: NSRect, flipped: Bool) {
     let info = playerCore.info
-    
+
     let slider = self.controlView as! NSSlider
-    
+
     /// The position of the knob, rounded for cleaner drawing
     let knobPos : CGFloat = round(knobRect(flipped: flipped).origin.x);
-    
+
     /// How far progressed the current video is, used for drawing the bar background
     var progress : CGFloat = 0;
-    
+
     if info.isNetworkResource,
       info.cacheTime != 0,
       let duration = info.videoDuration,
@@ -152,7 +156,7 @@ class PlaySliderCell: NSSliderCell {
     } else {
       progress = knobPos;
     }
-    
+
     let rect = NSMakeRect(rect.origin.x, rect.origin.y + 1, rect.width, rect.height - 2)
     let path = NSBezierPath(roundedRect: rect, xRadius: barRadius, yRadius: barRadius)
 
@@ -166,7 +170,7 @@ class PlaySliderCell: NSSliderCell {
       // Clip 1px around the knob
       path.append(NSBezierPath(rect: NSRect(x: knobPos - 1, y: rect.origin.y, width: knobWidth + 2, height: rect.height)).reversed);
     }
-    
+
     barColorLeft.setFill()
     path.fill()
     NSGraphicsContext.restoreGraphicsState()
@@ -210,7 +214,7 @@ class PlaySliderCell: NSSliderCell {
     isPausedBeforeSeeking = playerCore.info.isPaused
     let result = super.startTracking(at: startPoint, in: controlView)
     if result {
-      playerCore.togglePause(true)
+      playerCore.pause()
       playerCore.mainWindow.thumbnailPeekView.isHidden = true
     }
     return result
@@ -218,7 +222,7 @@ class PlaySliderCell: NSSliderCell {
 
   override func stopTracking(last lastPoint: NSPoint, current stopPoint: NSPoint, in controlView: NSView, mouseIsUp flag: Bool) {
     if !isPausedBeforeSeeking {
-      playerCore.togglePause(false)
+      playerCore.resume()
     }
     super.stopTracking(last: lastPoint, current: stopPoint, in: controlView, mouseIsUp: flag)
   }

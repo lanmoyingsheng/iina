@@ -34,7 +34,9 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
   @IBOutlet weak var editFilterKeyRecordView: KeyRecordView!
   @IBOutlet weak var editFilterKeyRecordViewLabel: NSTextField!
   @IBOutlet weak var removeButton: NSButton!
-  
+
+  var loaded = false
+
   var filterType: String!
 
   var filters: [MPVFilter] = []
@@ -46,6 +48,7 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
 
   override func windowDidLoad() {
     super.windowDidLoad()
+    loaded = true
     window?.delegate = self
 
     // title
@@ -68,11 +71,17 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
 
     // notifications
     let notiName: Notification.Name = filterType == MPVProperty.af ? .iinaAFChanged : .iinaVFChanged
-    NotificationCenter.default.addObserver(self, selector: #selector(reloadTable), name: notiName, object: nil)
-    NotificationCenter.default.addObserver(self, selector: #selector(reloadTable), name: .iinaMainWindowChanged, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(reloadTableInMainThread), name: notiName, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(reloadTableInMainThread), name: .iinaMainWindowChanged, object: nil)
   }
 
   @objc
+  func reloadTableInMainThread() {
+    DispatchQueue.main.sync {
+      reloadTable()
+    }
+  }
+
   func reloadTable() {
     filters = PlayerCore.active.mpv.getFilters(filterType)
     filterIsSaved = [Bool](repeatElement(false, count: filters.count))
@@ -86,10 +95,8 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
         }
       }
     }
-    DispatchQueue.main.async {
-      self.currentFiltersTableView.reloadData()
-      self.savedFiltersTableView.reloadData()
-    }
+    currentFiltersTableView.reloadData()
+    savedFiltersTableView.reloadData()
   }
 
   func setFilters() {
@@ -100,20 +107,21 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
     NotificationCenter.default.removeObserver(self)
   }
 
-  func addFilter(_ filter: MPVFilter) {
+  func addFilter(_ filter: MPVFilter) -> Bool {
     if filterType == MPVProperty.vf {
       guard PlayerCore.active.addVideoFilter(filter) else {
         Utility.showAlert("filter.incorrect", sheetWindow: window)
-        return
+        return false
       }
     } else {
       guard PlayerCore.active.addAudioFilter(filter) else {
         Utility.showAlert("filter.incorrect", sheetWindow: window)
-        return
+        return false
       }
     }
     filters.append(filter)
     reloadTable()
+    return true
   }
 
   func saveFilter(_ filter: MPVFilter) {
@@ -160,19 +168,34 @@ class FilterWindowController: NSWindowController, NSWindowDelegate {
     saveFilter(filters[row])
   }
 
+  /// User activates or deactivates previously saved audio or video filter
+  /// - Parameter sender: A checkbox in lower portion of filter window
   @IBAction func toggleSavedFilterAction(_ sender: NSButton) {
     let row = savedFiltersTableView.row(for: sender)
-    let filter = savedFilters[row]
+    let savedFilter = savedFilters[row]
     let pc = PlayerCore.active
-    if sender.state == .on {
-      if pc.addVideoFilter(MPVFilter(rawString: filter.filterString)!) {
-        pc.sendOSD(.addFilter(filter.name))
-      }
+
+    // choose approriate add/remove functions for .af/.vf
+    var addFilterFunction: (MPVFilter) -> Bool
+    var removeFilterFunction: (MPVFilter) -> Bool
+    if filterType == MPVProperty.vf {
+      addFilterFunction = pc.addVideoFilter
+      removeFilterFunction = pc.removeVideoFilter
     } else {
-      if pc.removeVideoFilter(MPVFilter(rawString: filter.filterString)!) {
+      addFilterFunction = pc.addAudioFilter
+      removeFilterFunction = pc.removeAudioFilter
+    }
+
+    if sender.state == .on {  // user activated filter
+      if addFilterFunction(MPVFilter(rawString: savedFilter.filterString)!) {
+        pc.sendOSD(.addFilter(savedFilter.name))
+      }
+    } else {  // user deactivated filter
+      if removeFilterFunction(MPVFilter(rawString: savedFilter.filterString)!) {
         pc.sendOSD(.removeFilter)
       }
     }
+
     reloadTable()
   }
 
@@ -298,7 +321,8 @@ class NewFilterSheetViewController: NSViewController, NSTableViewDelegate, NSTab
   @IBOutlet weak var filterWindow: FilterWindowController!
   @IBOutlet weak var tableView: NSTableView!
   @IBOutlet weak var scrollContentView: NSView!
-
+  @IBOutlet weak var addButton: NSButton!
+  
   private var currentPreset: FilterPreset?
   private var currentBindings: [String: NSControl] = [:]
   private var presets: [FilterPreset] = []
@@ -327,11 +351,18 @@ class NewFilterSheetViewController: NSViewController, NSTableViewDelegate, NSTab
     currentPreset = preset
     currentBindings.removeAll()
     scrollContentView.subviews.forEach { $0.removeFromSuperview() }
+    addButton.isEnabled = true
+
     var maxY: CGFloat = 0
     let generateInputs: (String, FilterParameter) -> Void = { (name, param) in
       self.scrollContentView.addSubview(self.quickLabel(yPos: maxY, title: preset.localizedParamName(name)))
       maxY += 21
       let input = self.quickInput(yPos: &maxY, param: param)
+      // For preventing crash due to adding a filter with no name:
+      if name == "name", preset.name.starts(with: "custom_"), let textField = input as? NSTextField {
+        textField.delegate = self
+        self.addButton.isEnabled = !textField.stringValue.isEmpty
+      }
       self.scrollContentView.addSubview(input)
       self.currentBindings[name] = input
     }
@@ -431,12 +462,22 @@ class NewFilterSheetViewController: NSViewController, NSTableViewDelegate, NSTab
       }
     }
     // create filter
-    filterWindow.addFilter(preset.transformer(instance))
-    PlayerCore.active.sendOSD(.addFilter(preset.localizedName))
+    if filterWindow.addFilter(preset.transformer(instance)) {
+      PlayerCore.active.sendOSD(.addFilter(preset.localizedName))
+    }
   }
 
   @IBAction func sheetCancelBtnAction(_ sender: Any) {
     filterWindow.window!.endSheet(filterWindow.newFilterSheet, returnCode: .cancel)
   }
 
+}
+
+/* For preventing crash due to to adding filter with no name */
+extension NewFilterSheetViewController: NSTextFieldDelegate {
+  func controlTextDidChange(_ obj: Notification) {
+    if let textField = obj.object as? NSTextField {
+      self.addButton.isEnabled = !textField.stringValue.isEmpty
+    }
+  }
 }
